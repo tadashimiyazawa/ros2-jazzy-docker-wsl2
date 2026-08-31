@@ -1,0 +1,68 @@
+services:
+  ros:
+    build:
+      context: .
+      args:
+        USERNAME: rosdev
+        UID: "1000"
+        GID: "1000"
+    image: ros2-jazzy-dev
+    container_name: ros2-jazzy
+    hostname: ros2-jazzy
+    # network_mode: host leaves /etc/hosts without an entry for the hostname,
+    # which makes every sudo call print a resolver warning.
+    extra_hosts:
+      - "ros2-jazzy:127.0.0.1"
+
+    # DDS multicast discovery needs a shared network. host mode also makes the
+    # container reachable from real robots on the LAN without port mapping.
+    network_mode: host
+    ipc: host
+
+    stdin_open: true
+    tty: true
+    init: true
+
+    environment:
+      # --- GUI via WSLg (RViz2, Gazebo, rqt) ---
+      DISPLAY: ${DISPLAY:-:0}
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-wayland-0}
+      XDG_RUNTIME_DIR: /run/user/1000
+      PULSE_SERVER: /mnt/wslg/PulseServer
+      QT_X11_NO_MITSHM: "1"
+      # --- ROS 2 ---
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      # Discover nodes on the LAN (real robots, other machines). Set to
+      # LOCALHOST to keep traffic inside this container, or OFF to isolate.
+      ROS_AUTOMATIC_DISCOVERY_RANGE: SUBNET
+      RCUTILS_COLORIZED_OUTPUT: "1"
+
+    volumes:
+      - ./ws:/ws
+      # Host /tmp/.X11-unix is itself a bind mount of the WSLg socket dir and
+      # comes through empty under snap-confined Docker, so mount the real one.
+      - /mnt/wslg/.X11-unix:/tmp/.X11-unix
+      - /mnt/wslg:/mnt/wslg
+      - ros-cache:/home/rosdev/.cache
+      # Windows driver store, where the WSL GPU driver keeps its Linux .so files.
+      # /usr/lib/wsl itself cannot be bind-mounted under snap-confined Docker.
+      - /mnt/c/Windows/System32/DriverStore/FileRepository:/usr/lib/wsl/drivers:ro
+
+    # WSL GPU device. Note: on this machine WSLg's Xwayland reports no DRI3, so
+    # Mesa falls back to llvmpipe (software) for host and container alike. The
+    # passthrough is wired up correctly and will engage if that changes.
+    devices:
+      - /dev/dxg:/dev/dxg
+      # Real hardware: on WSL2 first attach the device from Windows with
+      #   usbipd list  &&  usbipd attach --wsl --busid <BUSID>
+      # then add just that device here (never mount all of /dev):
+      # - /dev/ttyUSB0:/dev/ttyUSB0
+
+    # Gazebo and RViz want more than the 64MB default /dev/shm.
+    shm_size: "2gb"
+
+    working_dir: /ws
+    command: bash
+
+volumes:
+  ros-cache:
